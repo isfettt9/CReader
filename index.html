@@ -776,14 +776,15 @@ function goHome() {
 // ── API CALLS ────────────────────────────
 // MangaFire API helper - normalise a manga item from any endpoint
 function normaliseManga(item) {
-  // Real API response fields confirmed:
-  // id = '/manga/slug.abc' (full path), name, poster, status, currentChapter, genres, description
+  // Real API response: id = '/manga/slug.abc', name, poster, status, currentChapter, genres
   const rawId = item.id || item.mangaId || '';
-  // Strip leading slash so we can use as path param: /manga/slug.abc -> manga/slug.abc
-  const id = rawId.startsWith('/') ? rawId.slice(1) : rawId;
+  // slug is the last path segment e.g. 'one-piecee.dkw'
+  const slug = rawId.split('/').filter(Boolean).pop() || rawId;
+  // mangaPath is 'manga/slug.abc' used for /api/manga/:mangaPath
+  const mangaPath = rawId.startsWith('/') ? rawId.slice(1) : rawId;
   return {
-    id,
-    rawId,      // keep original for building API calls
+    id: slug,           // short slug — used as primary key and for /api/chapters/:id
+    mangaPath,          // 'manga/slug.abc' — used for /api/manga/:mangaPath
     title:  item.name  || item.title  || 'Unknown',
     cover:  item.poster|| item.image  || item.cover || item.thumbnail || '',
     type:   item.type  || '',
@@ -792,6 +793,20 @@ function normaliseManga(item) {
     genres: item.genres || [],
     desc:   item.description || ''
   };
+}
+
+// Given a stored manga id (slug), find mangaPath for /api/manga/ calls
+function getMangaPath(id) {
+  // If already full path
+  if (id.startsWith('manga/')) return id;
+  // Look in allManga first
+  const found = allManga.find(m => m.id === id);
+  if (found && found.mangaPath) return found.mangaPath;
+  // Also check reading list
+  const rl = (userData.readingList||[]).find(m => m.id === id);
+  if (rl && rl.mangaPath) return rl.mangaPath;
+  // Fallback: assume manga/slug format
+  return 'manga/' + id;
 }
 
 async function fetchTrending(type='trending') {
@@ -872,7 +887,9 @@ async function fetchCategory(cat) {
   showSkeletons();
   try {
     const j = await apiFetch('/api/category/'+cat);
-    const list = j.results || j.data || j.mangas || j || [];
+    // Category response likely same shape as home
+    const list = j.results || j.mangas || j.releasingManga ||
+                 j.data || Object.values(j).find(v=>Array.isArray(v)&&v.length) || [];
     allManga = (Array.isArray(list)?list:[]).map(normaliseManga);
     renderGrid(allManga);
   } catch(e) {
@@ -919,11 +936,13 @@ async function openDetail(mangaId) {
   view.classList.add('active');
   modal.innerHTML='<div style="padding:60px;text-align:center;color:var(--muted)">Loading...</div>';
   try {
-    // id format: 'manga/slug.abc' → API path: '/api/manga/slug.abc'
-    const apiId = mangaId.startsWith('manga/') ? mangaId : 'manga/'+mangaId;
+    // manga detail uses full path: /api/manga/slug.abc
+    // chapters uses just the slug: /api/chapters/slug.abc
+    const mangaPath = getMangaPath(mangaId);
+    const slug = mangaId.includes('/') ? mangaId.split('/').pop() : mangaId;
     const [mj, cj] = await Promise.all([
-      apiFetch('/api/'+apiId),
-      apiFetch('/api/chapters/'+apiId+'?lng=en')
+      apiFetch('/api/'+mangaPath),
+      apiFetch('/api/chapters/'+slug+'?lng=en')
     ]);
     // Actual response fields confirmed from API
     const title  = mj.name  || mj.title  || 'Unknown';
@@ -1018,7 +1037,8 @@ function toggleRL(mangaId, title, cover) {
     if(btn){ btn.textContent='+ Add to Reading List'; btn.classList.remove('active'); }
     toast('Removed from reading list');
   } else {
-    userData.readingList = [{id:mangaId,title,coverUrl:cover,addedAt:Date.now()},...list];
+    const mp = getMangaPath(mangaId);
+    userData.readingList = [{id:mangaId,mangaPath:mp,title,coverUrl:cover,addedAt:Date.now()},...list];
     if(btn){ btn.textContent='✓ In Reading List'; btn.classList.add('active'); }
     toast('Added to reading list! 📚');
   }
@@ -1305,7 +1325,8 @@ async function fetchAlerts() {
   const alerts=[];
   await Promise.all((userData.readingList||[]).slice(0,8).map(async m=>{
     try{
-      const j=await apiFetch('/api/chapters/'+m.id+'?lng=en');
+      const slug = m.id.includes('/')?m.id.split('/').pop():m.id;
+      const j=await apiFetch('/api/chapters/'+slug+'?lng=en');
       const chs=j.chapters||j.data||j||[];
       if(!chs.length) return;
       const latest=chs[0]; // first = newest
