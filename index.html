@@ -655,6 +655,51 @@
     #nav-account-label { display: none; }
   }
 
+  /* ── BROWSE DROPDOWN ── */
+  .browse-dropdown { position: relative; flex-shrink: 0; }
+
+  .browse-btn {
+    background: none; border: none; color: var(--muted);
+    width: 36px; height: 36px; border-radius: 8px; cursor: pointer;
+    display: flex; flex-direction: column; align-items: center;
+    justify-content: center; gap: 4px; transition: color 0.2s; flex-shrink: 0;
+  }
+  .browse-btn span {
+    display: block; width: 18px; height: 2px;
+    background: currentColor; border-radius: 1px; transition: all 0.2s;
+  }
+  .browse-btn:hover { color: var(--text); }
+  .browse-btn.open { color: var(--accent); }
+  .browse-btn.open span:nth-child(1) { transform: translateY(6px) rotate(45deg); }
+  .browse-btn.open span:nth-child(2) { opacity: 0; transform: scaleX(0); }
+  .browse-btn.open span:nth-child(3) { transform: translateY(-6px) rotate(-45deg); }
+
+  .browse-menu {
+    position: absolute; top: calc(100% + 8px); left: 0;
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: 12px; padding: 14px; width: 280px; z-index: 200;
+    box-shadow: 0 12px 40px rgba(0,0,0,0.5); display: none;
+    animation: fadeDown 0.18s ease;
+  }
+  .browse-menu.open { display: block; }
+  @keyframes fadeDown {
+    from { opacity: 0; transform: translateY(-6px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+  .browse-menu-label {
+    font-size: 10px; font-weight: 700; letter-spacing: 0.8px;
+    text-transform: uppercase; color: var(--muted); margin-bottom: 10px;
+  }
+  .browse-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+  .b-chip {
+    background: var(--surface2); border: 1px solid var(--border);
+    color: var(--muted); font-size: 12px; font-family: 'DM Sans', sans-serif;
+    padding: 4px 12px; border-radius: 20px; cursor: pointer;
+    transition: all 0.15s; white-space: nowrap;
+  }
+  .b-chip:hover { border-color: var(--accent); color: var(--text); }
+  .b-chip.active { background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 500; }
+
   /* ── TRENDING TABS ── */
   .trending-tabs {
     display: flex; gap: 6px; margin-left: auto;
