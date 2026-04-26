@@ -1337,6 +1337,44 @@
 </div>
 
 <script type="module">
+import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js';
+import { getAuth, createUserWithEmailAndPassword, signInWithEmailAndPassword,
+         signOut, onAuthStateChanged, updateProfile }
+  from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js';
+import { getFirestore, doc, getDoc, setDoc, updateDoc, onSnapshot }
+  from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js';
+
+const firebaseConfig = {
+  apiKey: "AIzaSyA-eE9dgiXNh4D4ITPMTfehTpzP2sscssk",
+  authDomain: "isfcomick.firebaseapp.com",
+  projectId: "isfcomick",
+  storageBucket: "isfcomick.firebasestorage.app",
+  messagingSenderId: "837602695910",
+  appId: "1:837602695910:web:701369fb42214436647927"
+};
+
+const app  = initializeApp(firebaseConfig);
+window._fbAuth = getAuth(app);
+window._fbDb   = getFirestore(app);
+window._fbAuthFns = {
+  createUserWithEmailAndPassword, signInWithEmailAndPassword,
+  signOut, onAuthStateChanged, updateProfile
+};
+window._fbFirestoreFns = { doc, getDoc, setDoc, updateDoc, onSnapshot };
+window._fbReady = true;
+document.dispatchEvent(new Event('firebase-ready'));
+</script>
+
+<script>
+
+// Wait for Firebase module to initialise before running app code
+function startApp() {
+  const auth = window._fbAuth;
+  const db   = window._fbDb;
+  const { createUserWithEmailAndPassword, signInWithEmailAndPassword,
+          signOut: fbSignOut, onAuthStateChanged, updateProfile } = window._fbAuthFns;
+  const { doc, setDoc, onSnapshot } = window._fbFirestoreFns;
+
 // ═══════════════════════════════════════════════════════════════
 // CONSTANTS
 // ═══════════════════════════════════════════════════════════════
@@ -1366,25 +1404,13 @@ let readerNavVisible = true;
 // ═══════════════════════════════════════════════════════════════
 
 // Firebase is loaded via CDN modules below — these are the SDK imports
-import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js';
-import { getAuth, createUserWithEmailAndPassword, signInWithEmailAndPassword,
-         signOut as fbSignOut, onAuthStateChanged, updateProfile }
-  from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js';
-import { getFirestore, doc, getDoc, setDoc, updateDoc, onSnapshot }
-  from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js';
-
-const firebaseConfig = {
-  apiKey: "AIzaSyA-eE9dgiXNh4D4ITPMTfehTpzP2sscssk",
-  authDomain: "isfcomick.firebaseapp.com",
-  projectId: "isfcomick",
-  storageBucket: "isfcomick.firebasestorage.app",
-  messagingSenderId: "837602695910",
-  appId: "1:837602695910:web:701369fb42214436647927"
-};
-
-const firebaseApp = initializeApp(firebaseConfig);
-const auth = getAuth(firebaseApp);
-const db   = getFirestore(firebaseApp);
+// Firebase loaded via separate module script above — 
+// auth, db, and Firebase functions are on window.*
+const auth = window._fbAuth;
+const db   = window._fbDb;
+const { createUserWithEmailAndPassword, signInWithEmailAndPassword,
+        signOut: fbSignOut, onAuthStateChanged, updateProfile } = window._fbAuthFns;
+const { doc, setDoc, onSnapshot } = window._fbFirestoreFns;
 
 // Current user state (set by onAuthStateChanged)
 let currentUser = null;
@@ -2109,6 +2135,49 @@ if (isIOS && !window.navigator.standalone) {
   b.querySelector('.install-btn').textContent = 'Got it';
   b.querySelector('.install-btn').onclick = dismissInstall;
   b.classList.remove('hidden'); b.classList.add('shown');
+}
+
+
+  // ── Expose functions to global scope for onclick handlers ──
+  window.goHome = goHome;
+  window.handleSearch = handleSearch;
+  window.handleAccountClick = handleAccountClick;
+  window.toggleBrowse = toggleBrowse;
+  window.browseGenre = browseGenre;
+  window.openDetail = openDetail;
+  window.closeDetail = closeDetail;
+  window.toggleReadingList = toggleReadingList;
+  window.openReader = openReader;
+  window.closeReader = closeReader;
+  window.changeChapter = changeChapter;
+  window.readerPageStep = readerPageStep;
+  window.seekToPage = seekToPage;
+  window.handleReaderTap = handleReaderTap;
+  window.openReaderSidebar = openReaderSidebar;
+  window.closeReaderSidebar = closeReaderSidebar;
+  window.cycleReadingMode = cycleReadingMode;
+  window.toggleSetting = toggleSetting;
+  window.bookmarkCurrentPage = bookmarkCurrentPage;
+  window.shareCurrentManga = shareCurrentManga;
+  window.handleAccountClick = handleAccountClick;
+  window.openAccountPanel = openAccountPanel;
+  window.closeAccountPanel = closeAccountPanel;
+  window.signOut = signOut;
+  window.removeRead = removeRead;
+  window.switchTab = switchTab;
+  window.handleAuthSubmit = handleAuthSubmit;
+  window.closeAuth = closeAuth;
+  window.toggleSearch = toggleSearch;
+  window.onSearchBlur = onSearchBlur;
+  window.installApp = installApp;
+  window.dismissInstall = dismissInstall;
+  window.switchTrend = switchTrend;
+}
+
+if (window._fbReady) {
+  startApp();
+} else {
+  document.addEventListener('firebase-ready', startApp, { once: true });
 }
 </script>
 </body>
