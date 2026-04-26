@@ -776,15 +776,21 @@ function goHome() {
 // ── API CALLS ────────────────────────────
 // MangaFire API helper - normalise a manga item from any endpoint
 function normaliseManga(item) {
-  // The API returns slightly different shapes from different endpoints
-  // Common fields: id, name/title, image/poster/cover, type, status, latestChapter
+  // Real API response fields confirmed:
+  // id = '/manga/slug.abc' (full path), name, poster, status, currentChapter, genres, description
+  const rawId = item.id || item.mangaId || '';
+  // Strip leading slash so we can use as path param: /manga/slug.abc -> manga/slug.abc
+  const id = rawId.startsWith('/') ? rawId.slice(1) : rawId;
   return {
-    id:     item.id || item.mangaId || '',
-    title:  item.name || item.title || item.manga || 'Unknown',
-    cover:  item.image || item.poster || item.cover || item.thumbnail || '',
-    type:   item.type || '',
-    status: item.status || '',
-    latestChapter: item.latestChapter || item.chapter || ''
+    id,
+    rawId,      // keep original for building API calls
+    title:  item.name  || item.title  || 'Unknown',
+    cover:  item.poster|| item.image  || item.cover || item.thumbnail || '',
+    type:   item.type  || '',
+    status: item.status|| '',
+    latestChapter: item.currentChapter || item.latestChapter || item.chapter || '',
+    genres: item.genres || [],
+    desc:   item.description || ''
   };
 }
 
@@ -793,9 +799,16 @@ async function fetchTrending(type='trending') {
   strip.innerHTML='<div style="color:var(--muted);font-size:13px;padding:8px">Loading...</div>';
   try {
     const j = await apiFetch('/api/home');
-    // Home returns: { trending:[], newRelease:[], recentlyUpdated:[] }
-    const key = type==='new-release'?'newRelease':type==='recently-updated'?'recentlyUpdated':'trending';
-    const list = (j[key]||j.trending||j.data||[]).slice(0,12);
+    // Actual keys: releasingManga, completedManga (and possibly more)
+    const keyMap = {
+      'trending':          'releasingManga',
+      'new-release':       'completedManga',
+      'recently-updated':  'releasingManga'
+    };
+    const key = keyMap[type] || 'releasingManga';
+    const fallback = j.releasingManga || j.completedManga ||
+                     Object.values(j).find(Array.isArray) || [];
+    const list = (j[key] || fallback).slice(0, 12);
     if (!list.length) { strip.innerHTML='<div style="color:var(--muted);font-size:13px;padding:8px">No data</div>'; return; }
     strip.innerHTML = list.map((item,i) => {
       const m = normaliseManga(item);
@@ -822,8 +835,9 @@ async function fetchPopular() {
   showSkeletons();
   try {
     const j = await apiFetch('/api/home');
-    // Pull from trending or any available list
-    const list = j.trending || j.newRelease || j.recentlyUpdated || j.data || [];
+    // Actual response: { releasingManga:[], completedManga:[], ... }
+    const list = j.releasingManga || j.trending || j.newRelease ||
+                 j.recentlyUpdated || j.data || Object.values(j).find(Array.isArray) || [];
     allManga = list.map(normaliseManga);
     renderGrid(allManga);
   } catch(e) {
@@ -843,8 +857,9 @@ async function fetchSearch(query) {
   showSkeletons();
   try {
     const j = await apiFetch('/api/search?keyword='+encodeURIComponent(query));
-    // Search returns: { results:[] } or { data:[] } or direct array
-    const list = j.results || j.data || j || [];
+    // Search returns: { results:[] } or { mangas:[] } or { data:[] }
+    const list = j.results || j.mangas || j.data ||
+                 Object.values(j).find(Array.isArray) || [];
     allManga = (Array.isArray(list)?list:[]).map(normaliseManga);
     renderGrid(allManga);
   } catch(e) {
@@ -904,26 +919,36 @@ async function openDetail(mangaId) {
   view.classList.add('active');
   modal.innerHTML='<div style="padding:60px;text-align:center;color:var(--muted)">Loading...</div>';
   try {
+    // id format: 'manga/slug.abc' → API path: '/api/manga/slug.abc'
+    const apiId = mangaId.startsWith('manga/') ? mangaId : 'manga/'+mangaId;
     const [mj, cj] = await Promise.all([
-      apiFetch('/api/manga/'+mangaId),
-      apiFetch('/api/chapters/'+mangaId+'?lng=en')
+      apiFetch('/api/'+apiId),
+      apiFetch('/api/chapters/'+apiId+'?lng=en')
     ]);
-    // Manga detail: { id, name/title, image/poster, description/synopsis, status, type, genres:[], authors:[] }
-    const title  = mj.name || mj.title || 'Unknown';
-    const cover  = mj.image || mj.poster || mj.cover || '';
+    // Actual response fields confirmed from API
+    const title  = mj.name  || mj.title  || 'Unknown';
+    const cover  = mj.poster || mj.image || mj.cover || '';
     const desc   = mj.description || mj.synopsis || mj.summary || 'No description available.';
     const status = mj.status || '';
-    const type   = mj.type || '';
-    const genres = (mj.genres||mj.genre||[]).slice(0,8);
-    const author = Array.isArray(mj.authors) ? mj.authors.join(', ') : (mj.author||'');
+    const type   = mj.type   || '';
+    const genres = (mj.genres || mj.genre || []).slice(0, 8);
+    const author = Array.isArray(mj.authors) ? mj.authors.join(', ') : (mj.author || '');
     currentMangaTitle = title;
 
-    // Chapters: array of { id, name/title, number, releaseDate } newest first
-    const rawChs = cj.chapters || cj.data || cj || [];
-    // Sort by chapter number descending (newest first)
-    currentChapters = (Array.isArray(rawChs)?rawChs:[]).sort((a,b)=>{
-      const na = parseFloat(a.number||a.chapter||a.num||0);
-      const nb = parseFloat(b.number||b.chapter||b.num||0);
+    // Chapters response: { chapters: { en: [ {id, name, number/chapter, releaseDate} ] } }
+    // or flat array — handle both
+    let rawChs = [];
+    if (cj.chapters) {
+      rawChs = Array.isArray(cj.chapters) ? cj.chapters :
+               (cj.chapters.en || cj.chapters['en'] ||
+                Object.values(cj.chapters).find(Array.isArray) || []);
+    } else {
+      rawChs = cj.data || cj || [];
+    }
+    if (!Array.isArray(rawChs)) rawChs = [];
+    currentChapters = rawChs.sort((a,b) => {
+      const na = parseFloat(a.number||a.chapter||a.num||a.name?.replace(/[^0-9.]/g,'')||0);
+      const nb = parseFloat(b.number||b.chapter||b.num||b.name?.replace(/[^0-9.]/g,'')||0);
       return nb - na;
     });
 
@@ -958,9 +983,10 @@ async function openDetail(mangaId) {
       <div class="ch-list">
         ${currentChapters.length
           ? currentChapters.map((ch,i)=>{
-              const chNum = ch.number||ch.chapter||ch.num||'?';
-              const chTitle = ch.name||ch.title||'';
-              const chDate  = ch.releaseDate||ch.date||ch.createdAt||'';
+              const chNum = ch.number||ch.chapter||ch.num||
+                            ch.name?.match(/[\d.]+/)?.[0]||'?';
+              const chTitle = '';
+              const chDate  = ch.releaseDate||ch.date||ch.createdAt||ch.updatedAt||'';
               const isLast  = i===lastReadIdx;
               return `<div class="ch-item${isLast?' last-read':''}" onclick="openReader(${i})">
                 <span class="ch-num">Ch.${chNum}</span>
@@ -1016,8 +1042,9 @@ async function openReader(chIdx) {
 async function loadChapter(idx, forcePage) {
   const ch = currentChapters[idx];
   if (!ch) return;
-  const chNum = ch.number||ch.chapter||ch.num||'?';
-  const chTitle = ch.name||ch.title||'';
+  const chNum = ch.number||ch.chapter||ch.num||
+               ch.name?.match(/[\d.]+/)?.[0]||'?';
+  const chTitle = '';
 
   document.getElementById('r-title').textContent = currentMangaTitle;
   document.getElementById('r-sub').textContent = `Chapter ${chNum}${chTitle?' — '+chTitle:''}`;
@@ -1039,12 +1066,13 @@ async function loadChapter(idx, forcePage) {
   updatePageDisplay(resumePage,0);
 
   try {
-    // /api/images/:chapterId returns { images:[] } or { data:[] } or direct array of URLs
-    const chId = ch.id || ch.chapterId || ch._id;
+    // Chapter id is like '/chapter/slug' or 'chapter/slug'
+    const rawChId = ch.id || ch.chapterId || ch._id || '';
+    const chId = rawChId.startsWith('/') ? rawChId.slice(1) : rawChId;
     const j = await apiFetch('/api/images/'+chId);
+    // Response: { images:[] } where images are URLs or objects
     pageImages = j.images || j.data || j || [];
-    // Some endpoints return objects with url field
-    pageImages = pageImages.map(p => typeof p==='string' ? p : (p.url||p.src||p.image||''));
+    pageImages = pageImages.map(p => typeof p==='string' ? p : (p.url||p.src||p.image||p.link||''));
     pageImages = pageImages.filter(Boolean);
     readerPageCount = pageImages.length;
     document.getElementById('r-pg-total').textContent = readerPageCount;
