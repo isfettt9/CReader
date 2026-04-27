@@ -466,10 +466,34 @@ const db   = firebase.firestore();
 const MD   = 'https://api.mangadex.org';
 const CDNC = 'https://uploads.mangadex.org/covers';
 
+// Proxies tried in order — first one that works is used for the session
+const PROXIES = [
+  u => 'https://corsproxy.io/?' + encodeURIComponent(u),
+  u => 'https://api.allorigins.win/raw?url=' + encodeURIComponent(u),
+  u => 'https://proxy.cors.sh/' + u,
+];
+let workingProxy = null; // cache whichever proxy works
+
 async function mdFetch(path) {
-  const r = await fetch(MD + path, {headers:{'Accept':'application/json'}});
-  if (!r.ok) throw new Error('MangaDex ' + r.status + ': ' + path);
-  return r.json();
+  const url = MD + path;
+
+  // If we already found a working proxy this session, use it
+  if (workingProxy) {
+    const r = await fetch(workingProxy(url), {signal: AbortSignal.timeout(10000)});
+    if (r.ok) return r.json();
+  }
+
+  // Try each proxy until one works
+  for (const px of PROXIES) {
+    try {
+      const r = await fetch(px(url), {signal: AbortSignal.timeout(10000)});
+      if (r.ok) {
+        workingProxy = px; // remember this one
+        return r.json();
+      }
+    } catch(_) {}
+  }
+  throw new Error('All proxies failed for: ' + path);
 }
 
 function coverUrl(mangaId, rels) {
