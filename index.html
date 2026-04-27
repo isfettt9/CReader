@@ -799,7 +799,12 @@ async function openDetail(mid){
   try{
     const [mj,cj]=await Promise.all([
       mdFetch('/manga/'+mid+'?includes[]=cover_art&includes[]=author'),
-      mdFetch('/manga/'+mid+'/feed?translatedLanguage[]=en&order[chapter]=desc&limit=100&includes[]=scanlation_group')
+      (async () => {
+      const p = new URLSearchParams({'order[chapter]':'desc', limit:100, 'order[volume]':'desc'});
+      p.append('translatedLanguage[]','en');
+      p.append('includes[]','scanlation_group');
+      return mdFetch('/manga/'+mid+'/feed?'+p);
+    })()
     ]);
     const m=mj.data,a=m.attributes;
     const ti=mdTitle(a),cv=coverUrl(m.id,m.relationships);
@@ -808,7 +813,7 @@ async function openDetail(mid){
     const tags=(a.tags||[]).slice(0,8).map(t=>t.attributes.name.en).filter(Boolean);
     const auth2=m.relationships?.find(r=>r.type==='author')?.attributes?.name||'';
     curMangaTitle=ti;
-    curChapters=(cj.data||[]).filter(c=>c.attributes.pages>0);
+    curChapters=(cj.data||[]);
     const inList=(uData.readingList||[]).some(x=>x.id===mid);
     const prog=uData.progress?.[mid];
     const lri=prog?prog.chapterIndex:-1;
