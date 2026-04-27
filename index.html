@@ -678,18 +678,19 @@ async function getTagId(genre){
 // FETCH MANGA
 // ═══════════════════════════════
 function mkParams(extra={}) {
-  const p = new URLSearchParams({
-    limit:30, 'order[followedCount]':'desc',
-    'includes[]':'cover_art', hasAvailableChapters:true,
-  });
-  // Arrays must be appended individually
-  p.append('contentRating[]','safe');
-  p.append('contentRating[]','suggestive');
-  Object.entries(extra).forEach(([k,v]) => {
-    if (Array.isArray(v)) v.forEach(i => p.append(k, i));
-    else p.set(k, v);
-  });
-  return p;
+  // Build query string manually — proxies mangle URLSearchParams with [] keys
+  const base = [
+    'limit=30',
+    'order[followedCount]=desc',
+    'includes[]=cover_art',
+    'hasAvailableChapters=true',
+    'contentRating[]=safe',
+    'contentRating[]=suggestive',
+  ];
+  const extras = Object.entries(extra).flatMap(([k,v]) =>
+    Array.isArray(v) ? v.map(i => k+'='+encodeURIComponent(i)) : [k+'='+encodeURIComponent(v)]
+  );
+  return base.concat(extras).join('&');
 }
 
 async function fetchPopular(){
@@ -725,13 +726,16 @@ async function fetchTrend(period='week'){
   const strip=document.getElementById('ts');
   strip.innerHTML='<div style="color:var(--mu);font-size:13px;padding:8px">Loading...</div>';
   try{
-    const p=new URLSearchParams({
-      limit:15,'order[followedCount]':'desc','includes[]':'cover_art',
-      hasAvailableChapters:true,'contentRating[]':['safe','suggestive'],
-      'order[updatedAt]':'desc'
-    });
-    if(period==='month') p.set('order[followedCount]','desc');
-    const j=await mdFetch('/manga?'+p);
+    const qs = [
+      'limit=15',
+      'order[followedCount]=desc',
+      'includes[]=cover_art',
+      'hasAvailableChapters=true',
+      'contentRating[]=safe',
+      'contentRating[]=suggestive',
+      'order[updatedAt]=desc',
+    ].join('&');
+    const j=await mdFetch('/manga?'+qs);
     const list=j.data||[];
     strip.innerHTML=list.map((m,i)=>{
       const cv=coverUrl(m.id,m.relationships);
@@ -799,12 +803,7 @@ async function openDetail(mid){
   try{
     const [mj,cj]=await Promise.all([
       mdFetch('/manga/'+mid+'?includes[]=cover_art&includes[]=author'),
-      (async () => {
-      const p = new URLSearchParams({'order[chapter]':'desc', limit:100, 'order[volume]':'desc'});
-      p.append('translatedLanguage[]','en');
-      p.append('includes[]','scanlation_group');
-      return mdFetch('/manga/'+mid+'/feed?'+p);
-    })()
+      mdFetch('/manga/'+mid+'/feed?order[chapter]=desc&order[volume]=desc&limit=500')
     ]);
     const m=mj.data,a=m.attributes;
     const ti=mdTitle(a),cv=coverUrl(m.id,m.relationships);
@@ -813,7 +812,14 @@ async function openDetail(mid){
     const tags=(a.tags||[]).slice(0,8).map(t=>t.attributes.name.en).filter(Boolean);
     const auth2=m.relationships?.find(r=>r.type==='author')?.attributes?.name||'';
     curMangaTitle=ti;
-    curChapters=(cj.data||[]);
+    // Filter English chapters client-side (proxy strips [] params)
+    curChapters = (cj.data||[]).filter(c =>
+      c.attributes.translatedLanguage === 'en' ||
+      c.attributes.translatedLanguage === 'en-us' ||
+      c.attributes.translatedLanguage === 'en-gb'
+    );
+    // If no English found, show all languages
+    if (!curChapters.length) curChapters = cj.data||[];
     const inList=(uData.readingList||[]).some(x=>x.id===mid);
     const prog=uData.progress?.[mid];
     const lri=prog?prog.chapterIndex:-1;
