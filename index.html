@@ -677,12 +677,19 @@ async function getTagId(genre){
 // ═══════════════════════════════
 // FETCH MANGA
 // ═══════════════════════════════
-function mkParams(extra={}){
-  return new URLSearchParams({
-    limit:30,'order[followedCount]':'desc',
-    'includes[]':'cover_art',hasAvailableChapters:true,
-    'contentRating[]':['safe','suggestive'],...extra
+function mkParams(extra={}) {
+  const p = new URLSearchParams({
+    limit:30, 'order[followedCount]':'desc',
+    'includes[]':'cover_art', hasAvailableChapters:true,
   });
+  // Arrays must be appended individually
+  p.append('contentRating[]','safe');
+  p.append('contentRating[]','suggestive');
+  Object.entries(extra).forEach(([k,v]) => {
+    if (Array.isArray(v)) v.forEach(i => p.append(k, i));
+    else p.set(k, v);
+  });
+  return p;
 }
 
 async function fetchPopular(){
